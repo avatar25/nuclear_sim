@@ -278,10 +278,10 @@ def control_panel(sim: NuclearSimulator, frame: SimulationFrame) -> None:
         st.caption(f"Rust worker threads: {sim.thread_count()} | particle ceiling: 150,000")
 
         start_col, stop_col = st.columns(2)
-        if start_col.button("Start", use_container_width=True, disabled=st.session_state.running):
+        if start_col.button("Start", width="stretch", disabled=st.session_state.running):
             st.session_state.running = True
             sim.start()
-        if stop_col.button("Pause", use_container_width=True, disabled=not st.session_state.running):
+        if stop_col.button("Pause", width="stretch", disabled=not st.session_state.running):
             st.session_state.running = False
             sim.stop()
 
@@ -302,10 +302,10 @@ def control_panel(sim: NuclearSimulator, frame: SimulationFrame) -> None:
         sim.set_control_rod_x(float(st.session_state.rod_x))
 
         rod_col_a, rod_col_b = st.columns(2)
-        if rod_col_a.button("Drop Rod", use_container_width=True, type="primary"):
+        if rod_col_a.button("Drop Rod", width="stretch", type="primary"):
             st.session_state.rod_target = 1.0
             sim.drop_control_rod()
-        if rod_col_b.button("Lift Rod", use_container_width=True):
+        if rod_col_b.button("Lift Rod", width="stretch"):
             st.session_state.rod_target = 0.0
             sim.lift_control_rod()
 
@@ -318,7 +318,7 @@ def control_panel(sim: NuclearSimulator, frame: SimulationFrame) -> None:
             st.slider("Seed neutrons", 64, 2_400, step=32, key="initial_neutrons")
             st.slider("Fuel density", 0.2, 1.0, step=0.02, key="fuel_density")
             st.slider("U-235 enrichment", 0.2, 1.0, step=0.02, key="enrichment")
-            submitted = st.form_submit_button("Re-seed Core", use_container_width=True)
+            submitted = st.form_submit_button("Re-seed Core", width="stretch")
 
         if submitted:
             st.session_state.running = False
@@ -383,7 +383,7 @@ def reactor_fragment() -> None:
     with plot_col:
         st.plotly_chart(
             build_reactor_figure(frame),
-            use_container_width=True,
+            width="stretch",
             config={"displayModeBar": False},
         )
     with data_col:
@@ -391,11 +391,11 @@ def reactor_fragment() -> None:
         st.line_chart(
             history_frame(frame).set_index("tick")[["neutron_population"]],
             height=250,
-            use_container_width=True,
+            width="stretch",
         )
         st.plotly_chart(
             build_heat_figure(frame),
-            use_container_width=True,
+            width="stretch",
             config={"displayModeBar": False},
         )
         st.caption(

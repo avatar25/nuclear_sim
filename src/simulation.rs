@@ -1,5 +1,6 @@
 use std::f32::consts::TAU;
 use std::mem;
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 
 use bevy_app::{App, Update};
@@ -292,13 +293,13 @@ pub struct SimulationFrame {
     pub history_reaction_rate: Vec<f32>,
 }
 
-pub struct SimulationEngine {
+struct SimulationCore {
     app: App,
     worker_count: usize,
 }
 
-impl SimulationEngine {
-    pub fn new(config: SimulationConfig) -> Self {
+impl SimulationCore {
+    fn new(config: SimulationConfig) -> Self {
         let worker_count = config.worker_count;
         let mut app = App::new();
         app.insert_resource(config);
@@ -320,20 +321,20 @@ impl SimulationEngine {
         Self { app, worker_count }
     }
 
-    pub fn set_running(&mut self, running: bool) {
+    fn set_running(&mut self, running: bool) {
         self.app.world_mut().resource_mut::<SimulationState>().running = running;
     }
 
-    pub fn is_running(&self) -> bool {
+    fn is_running(&self) -> bool {
         self.app.world().resource::<SimulationState>().running
     }
 
-    pub fn set_control_rod_target(&mut self, depth: f32) {
+    fn set_control_rod_target(&mut self, depth: f32) {
         self.app.world_mut().resource_mut::<SimulationState>().rod.target_depth =
             depth.clamp(0.0, 1.0);
     }
 
-    pub fn set_control_rod_x(&mut self, x: f32) {
+    fn set_control_rod_x(&mut self, x: f32) {
         let world = self.app.world_mut();
         let max_x = {
             let config = world.resource::<SimulationConfig>();
@@ -342,7 +343,7 @@ impl SimulationEngine {
         world.resource_mut::<SimulationState>().rod.x = x.clamp(0.0, max_x);
     }
 
-    pub fn step_batch(&mut self, steps: usize, dt: f32, sample_limit: usize) -> SimulationFrame {
+    fn step_batch(&mut self, steps: usize, dt: f32, sample_limit: usize) -> SimulationFrame {
         self.app.world_mut().resource_mut::<FrameTiming>().dt = dt.clamp(0.001, 0.05);
 
         for _ in 0..steps.max(1) {
@@ -352,7 +353,7 @@ impl SimulationEngine {
         self.snapshot(sample_limit)
     }
 
-    pub fn advance_if_running(
+    fn advance_if_running(
         &mut self,
         steps: usize,
         dt: f32,
@@ -365,14 +366,14 @@ impl SimulationEngine {
         }
     }
 
-    pub fn snapshot(&self, sample_limit: usize) -> SimulationFrame {
+    fn snapshot(&self, sample_limit: usize) -> SimulationFrame {
         let world = self.app.world();
         let config = *world.resource::<SimulationConfig>();
         let state = world.resource::<SimulationState>();
         build_frame(&state, config, sample_limit)
     }
 
-    pub fn reset(
+    fn reset(
         &mut self,
         initial_neutrons: Option<usize>,
         fuel_density: Option<f32>,
@@ -397,8 +398,217 @@ impl SimulationEngine {
         *world.resource_mut::<SimulationState>() = SimulationState::seeded(config);
     }
 
-    pub fn thread_count(&self) -> usize {
+    fn thread_count(&self) -> usize {
         self.worker_count
+    }
+}
+
+enum EngineCommand {
+    Start,
+    Stop,
+    IsRunning {
+        reply: mpsc::Sender<bool>,
+    },
+    Advance {
+        steps: usize,
+        dt: f32,
+        sample_limit: usize,
+        reply: mpsc::Sender<SimulationFrame>,
+    },
+    AdvanceIfRunning {
+        steps: usize,
+        dt: f32,
+        sample_limit: usize,
+        reply: mpsc::Sender<SimulationFrame>,
+    },
+    Snapshot {
+        sample_limit: usize,
+        reply: mpsc::Sender<SimulationFrame>,
+    },
+    SetControlRodTarget {
+        depth: f32,
+    },
+    SetControlRodX {
+        x: f32,
+    },
+    ThreadCount {
+        reply: mpsc::Sender<usize>,
+    },
+    Reset {
+        initial_neutrons: Option<usize>,
+        fuel_density: Option<f32>,
+        enrichment: Option<f32>,
+        reply: mpsc::Sender<SimulationFrame>,
+    },
+    Shutdown,
+}
+
+pub struct SimulationEngine {
+    command_tx: Arc<Mutex<mpsc::Sender<EngineCommand>>>,
+}
+
+impl SimulationEngine {
+    pub fn new(config: SimulationConfig) -> Self {
+        let (command_tx, command_rx) = mpsc::channel::<EngineCommand>();
+
+        thread::Builder::new()
+            .name("nuclear-sim-engine".to_string())
+            .spawn(move || {
+                let mut engine = SimulationCore::new(config);
+
+                while let Ok(command) = command_rx.recv() {
+                    match command {
+                        EngineCommand::Start => engine.set_running(true),
+                        EngineCommand::Stop => engine.set_running(false),
+                        EngineCommand::IsRunning { reply } => {
+                            let _ = reply.send(engine.is_running());
+                        }
+                        EngineCommand::Advance {
+                            steps,
+                            dt,
+                            sample_limit,
+                            reply,
+                        } => {
+                            let _ = reply.send(engine.step_batch(steps, dt, sample_limit));
+                        }
+                        EngineCommand::AdvanceIfRunning {
+                            steps,
+                            dt,
+                            sample_limit,
+                            reply,
+                        } => {
+                            let _ = reply.send(engine.advance_if_running(steps, dt, sample_limit));
+                        }
+                        EngineCommand::Snapshot {
+                            sample_limit,
+                            reply,
+                        } => {
+                            let _ = reply.send(engine.snapshot(sample_limit));
+                        }
+                        EngineCommand::SetControlRodTarget { depth } => {
+                            engine.set_control_rod_target(depth);
+                        }
+                        EngineCommand::SetControlRodX { x } => {
+                            engine.set_control_rod_x(x);
+                        }
+                        EngineCommand::ThreadCount { reply } => {
+                            let _ = reply.send(engine.thread_count());
+                        }
+                        EngineCommand::Reset {
+                            initial_neutrons,
+                            fuel_density,
+                            enrichment,
+                            reply,
+                        } => {
+                            engine.reset(initial_neutrons, fuel_density, enrichment);
+                            let _ = reply.send(engine.snapshot(4_096));
+                        }
+                        EngineCommand::Shutdown => break,
+                    }
+                }
+            })
+            .expect("failed to spawn nuclear simulation worker");
+
+        Self {
+            command_tx: Arc::new(Mutex::new(command_tx)),
+        }
+    }
+
+    fn sender(&self) -> mpsc::Sender<EngineCommand> {
+        self.command_tx
+            .lock()
+            .expect("nuclear simulation command mutex poisoned")
+            .clone()
+    }
+
+    fn request<T>(&self, build: impl FnOnce(mpsc::Sender<T>) -> EngineCommand) -> T {
+        let (reply_tx, reply_rx) = mpsc::channel();
+        self.sender()
+            .send(build(reply_tx))
+            .expect("nuclear simulation worker is unavailable");
+        reply_rx
+            .recv()
+            .expect("nuclear simulation worker dropped its reply")
+    }
+
+    pub fn set_running(&self, running: bool) {
+        let command = if running {
+            EngineCommand::Start
+        } else {
+            EngineCommand::Stop
+        };
+        self.sender()
+            .send(command)
+            .expect("nuclear simulation worker is unavailable");
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.request(|reply| EngineCommand::IsRunning { reply })
+    }
+
+    pub fn set_control_rod_target(&self, depth: f32) {
+        self.sender()
+            .send(EngineCommand::SetControlRodTarget { depth })
+            .expect("nuclear simulation worker is unavailable");
+    }
+
+    pub fn set_control_rod_x(&self, x: f32) {
+        self.sender()
+            .send(EngineCommand::SetControlRodX { x })
+            .expect("nuclear simulation worker is unavailable");
+    }
+
+    pub fn step_batch(&self, steps: usize, dt: f32, sample_limit: usize) -> SimulationFrame {
+        self.request(|reply| EngineCommand::Advance {
+            steps,
+            dt,
+            sample_limit,
+            reply,
+        })
+    }
+
+    pub fn advance_if_running(
+        &self,
+        steps: usize,
+        dt: f32,
+        sample_limit: usize,
+    ) -> SimulationFrame {
+        self.request(|reply| EngineCommand::AdvanceIfRunning {
+            steps,
+            dt,
+            sample_limit,
+            reply,
+        })
+    }
+
+    pub fn snapshot(&self, sample_limit: usize) -> SimulationFrame {
+        self.request(|reply| EngineCommand::Snapshot { sample_limit, reply })
+    }
+
+    pub fn reset(
+        &self,
+        initial_neutrons: Option<usize>,
+        fuel_density: Option<f32>,
+        enrichment: Option<f32>,
+    ) -> SimulationFrame {
+        self.request(|reply| EngineCommand::Reset {
+            initial_neutrons,
+            fuel_density,
+            enrichment,
+            reply,
+        })
+    }
+
+    pub fn thread_count(&self) -> usize {
+        self.request(|reply| EngineCommand::ThreadCount { reply })
+    }
+}
+
+impl Drop for SimulationEngine {
+    fn drop(&mut self) {
+        if let Ok(sender) = self.command_tx.lock() {
+            let _ = sender.send(EngineCommand::Shutdown);
+        }
     }
 }
 

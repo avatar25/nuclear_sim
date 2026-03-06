@@ -5,7 +5,7 @@ use pyo3::types::PyModule;
 use pyo3::Bound;
 use simulation::{SimulationConfig, SimulationEngine, SimulationFrame};
 
-#[pyclass(unsendable)]
+#[pyclass]
 struct NuclearSimulator {
     engine: SimulationEngine,
 }
@@ -49,11 +49,11 @@ impl NuclearSimulator {
         }
     }
 
-    fn start(&mut self) {
+    fn start(&self) {
         self.engine.set_running(true);
     }
 
-    fn stop(&mut self) {
+    fn stop(&self) {
         self.engine.set_running(false);
     }
 
@@ -62,12 +62,12 @@ impl NuclearSimulator {
     }
 
     #[pyo3(signature = (steps = 4, dt = 0.0125, sample_limit = 4_096))]
-    fn advance(&mut self, steps: usize, dt: f32, sample_limit: usize) -> SimulationFrame {
+    fn advance(&self, steps: usize, dt: f32, sample_limit: usize) -> SimulationFrame {
         self.engine.step_batch(steps, dt, sample_limit)
     }
 
     #[pyo3(signature = (steps = 4, dt = 0.0125, sample_limit = 4_096))]
-    fn advance_if_running(&mut self, steps: usize, dt: f32, sample_limit: usize) -> SimulationFrame {
+    fn advance_if_running(&self, steps: usize, dt: f32, sample_limit: usize) -> SimulationFrame {
         self.engine.advance_if_running(steps, dt, sample_limit)
     }
 
@@ -76,19 +76,19 @@ impl NuclearSimulator {
         self.engine.snapshot(sample_limit)
     }
 
-    fn drop_control_rod(&mut self) {
+    fn drop_control_rod(&self) {
         self.engine.set_control_rod_target(1.0);
     }
 
-    fn lift_control_rod(&mut self) {
+    fn lift_control_rod(&self) {
         self.engine.set_control_rod_target(0.0);
     }
 
-    fn set_control_rod_depth(&mut self, depth: f32) {
+    fn set_control_rod_depth(&self, depth: f32) {
         self.engine.set_control_rod_target(depth);
     }
 
-    fn set_control_rod_x(&mut self, x: f32) {
+    fn set_control_rod_x(&self, x: f32) {
         self.engine.set_control_rod_x(x);
     }
 
@@ -98,14 +98,13 @@ impl NuclearSimulator {
 
     #[pyo3(signature = (initial_neutrons = None, fuel_density = None, enrichment = None))]
     fn reset(
-        &mut self,
+        &self,
         initial_neutrons: Option<usize>,
         fuel_density: Option<f32>,
         enrichment: Option<f32>,
     ) -> SimulationFrame {
         self.engine
-            .reset(initial_neutrons, fuel_density, enrichment);
-        self.engine.snapshot(4_096)
+            .reset(initial_neutrons, fuel_density, enrichment)
     }
 }
 
