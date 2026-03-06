@@ -1,0 +1,20 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "nuclear-sim"
+version = "0.1.0"
+description = "Hybrid nuclear simulator with a Bevy Rust core and Streamlit dashboard"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.2",
+    "pandas>=2.2",
+    "plotly>=5.24",
+    "streamlit>=1.33",
+]
+
+[tool.maturin]
+bindings = "pyo3"
+module-name = "nuclear_sim_rs"

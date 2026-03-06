@@ -1,0 +1,16 @@
+[package]
+name = "nuclear_sim_rs"
+version = "0.1.0"
+edition = "2021"
+description = "Bevy-powered nuclear chain reaction simulator exposed to Python with PyO3"
+license = "MIT"
+
+[lib]
+name = "nuclear_sim_rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+bevy_app = "0.18"
+bevy_ecs = { version = "0.18", features = ["multi_threaded"] }
+bevy_math = "0.18"
+pyo3 = { version = "0.27", features = ["extension-module", "abi3-py313"] }
