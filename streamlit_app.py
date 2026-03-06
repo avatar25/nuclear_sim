@@ -123,6 +123,18 @@ def bootstrap() -> NuclearSimulator:
     return st.session_state.sim
 
 
+def sync_control_state(frame: SimulationFrame) -> None:
+    if "pending_rod_target" in st.session_state:
+        st.session_state.rod_target = st.session_state.pop("pending_rod_target")
+    elif "rod_target" not in st.session_state:
+        st.session_state.rod_target = float(frame.rod_depth)
+
+    if "pending_rod_x" in st.session_state:
+        st.session_state.rod_x = st.session_state.pop("pending_rod_x")
+    elif "rod_x" not in st.session_state:
+        st.session_state.rod_x = float(frame.rod_x)
+
+
 def history_frame(frame: SimulationFrame) -> pd.DataFrame:
     if not frame.history_ticks:
         return pd.DataFrame({"tick": [frame.tick], "neutron_population": [frame.neutron_population]})
@@ -273,6 +285,8 @@ def build_heat_figure(frame: SimulationFrame) -> go.Figure:
 
 
 def control_panel(sim: NuclearSimulator, frame: SimulationFrame) -> None:
+    sync_control_state(frame)
+
     with st.sidebar:
         st.subheader("Reactor Controls")
         st.caption(f"Rust worker threads: {sim.thread_count()} | particle ceiling: 150,000")
@@ -328,8 +342,9 @@ def control_panel(sim: NuclearSimulator, frame: SimulationFrame) -> None:
                 fuel_density=st.session_state.fuel_density,
                 enrichment=st.session_state.enrichment,
             )
-            st.session_state.rod_target = float(st.session_state.frame.rod_depth)
-            st.session_state.rod_x = float(st.session_state.frame.rod_x)
+            st.session_state.pending_rod_target = float(st.session_state.frame.rod_depth)
+            st.session_state.pending_rod_x = float(st.session_state.frame.rod_x)
+            st.rerun()
 
 
 def render_metrics(frame: SimulationFrame) -> None:
