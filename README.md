@@ -46,6 +46,12 @@ The editable install also pulls the dashboard dependencies from `pyproject.toml`
 streamlit run /Users/shiben/Desktop/nuclear_sim/streamlit_app.py
 ```
 
+Or use the one-shot launcher:
+
+```bash
+/Users/shiben/Desktop/nuclear_sim/run_sim.sh
+```
+
 ## Notes
 
 - The Rust core is capped at `150,000` neutrons by default to keep the dashboard responsive.
